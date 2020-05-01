@@ -53,45 +53,54 @@ export default async function stripeCreateAuthorizedPayment(context, input) {
     shippingAddress,
     shopId,
     paymentData: {
-      stripeTokenId
+      stripeTokenId,
+      payment_method,
+      payment_intent,
     }
   } = input;
 
   const stripe = await getStripeInstanceForShop(context);
 
-  // For orders with only a single fulfillment group, we could create a charge directly from the card token, and skip
-  // creating a customer. However, to help make future charging easier and because we always have an email address and tracking
-  // payments by customer in Stripe can be useful, we create a customer no matter what.
-  const stripeCustomer = await stripe.customers.create({ email, metadata: { accountId }, source: stripeTokenId });
-  const stripeCustomerId = stripeCustomer.id;
+  let intent = null;
+  let stripeCustomerId = null;
+  if(!payment_intent) {
+    const stripeCustomer = await stripe.customers.create({ email, metadata: { accountId }, payment_method: payment_method.id });
+    stripeCustomerId = stripeCustomer.id;
+    const intentObject = {
+      payment_method: payment_method.id,
+      amount: Math.round(amount * 100),
+      currency: currencyCode.toLowerCase(),
+      customer: stripeCustomerId,
+      confirmation_method: 'manual',
+      shipping: getStripeShippingObject(shippingAddress),
+      confirm: true
+    };
+    intent = await stripe.paymentIntents.create(intentObject)
+  } else {
+    intent = await stripe.paymentIntents.confirm(payment_intent.id);
+    stripeCustomerId = intent.customer;
+  }
 
   // https://stripe.com/docs/api#create_charge
-  const charge = await stripe.charges.create({
-    // "A positive integer representing how much to charge, in the smallest currency unit (e.g., 100 cents to charge $1.00, or 100 to charge ¥100, a zero-decimal currency)"
-    amount: Math.round(amount * 100),
-    // "When false, the charge issues an authorization (or pre-authorization), and will need to be captured later. Uncaptured charges expire in seven days."
-    capture: false,
-    // "Three-letter ISO currency code, in lowercase. Must be a supported currency."
-    currency: currencyCode.toLowerCase(),
-    // This customer's default card will be charged
-    customer: stripeCustomerId,
-    // "Shipping information for the charge. Helps prevent fraud on charges for physical goods."
-    shipping: getStripeShippingObject(shippingAddress)
-  });
+  
+  const charge = intent.charges.data[0] || {};
+  const brand = payment_method && payment_method.card.brand || 'no brand';
+  const last4 = payment_method && payment_method.card.last4 || '0000';
 
   return {
     _id: Random.id(),
     address: billingAddress,
     amount: charge.amount / 100,
-    cardBrand: charge.source.brand,
+    cardBrand: brand,
     createdAt: new Date(charge.created * 1000), // convert S to MS
     data: {
-      chargeId: charge.id,
+      intent,
+      chargeId: charge.id || 0,
       charge,
       customerId: stripeCustomerId,
       gqlType: "StripeCardPaymentData" // GraphQL union resolver uses this
     },
-    displayName: `${charge.source.brand} ${charge.source.last4}`,
+    displayName: `${brand} ${last4}`,
     method: METHOD,
     mode: "authorize",
     name: PAYMENT_METHOD_NAME,
@@ -100,7 +109,7 @@ export default async function stripeCreateAuthorizedPayment(context, input) {
     riskLevel: riskLevelMap[charge.outcome && charge.outcome.risk_level] || "normal",
     shopId,
     status: "created",
-    transactionId: charge.id,
+    transactionId: charge.id || 0,
     transactions: [charge]
   };
 }
