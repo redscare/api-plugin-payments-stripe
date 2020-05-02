@@ -12,7 +12,7 @@
   "email": "engineering@reactioncommerce.com",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/reactioncommerce/api-plugin-payments-stripe.git"
+    "url": "git+https://github.com/redscare/api-plugin-payments-stripe.git"
   },
   "author": {
     "name": "Reaction Commerce",
