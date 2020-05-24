@@ -44,6 +44,7 @@ function getStripeShippingObject(address) {
  * @returns {Object} The payment object in schema expected by the orders plugin
  */
 export default async function stripeCreateAuthorizedPayment(context, input) {
+  console.log("stripeCreateAuthorizedPayment 2");
   const {
     accountId,
     amount,
@@ -60,23 +61,33 @@ export default async function stripeCreateAuthorizedPayment(context, input) {
   } = input;
 
   const stripe = await getStripeInstanceForShop(context);
-
+  stripe.setMaxNetworkRetries(5);
+  console.log("GOT stripe");
   let intent = null;
   let stripeCustomerId = null;
+  console.log("payment_intent", payment_intent);
   if(!payment_intent) {
-    const stripeCustomer = await stripe.customers.create({ email, metadata: { accountId }, payment_method: payment_method.id });
-    stripeCustomerId = stripeCustomer.id;
+    console.log("empty payment_intent");
+    let stripeCustomer;
+      // stripeCustomer = await stripe.customers.create({ email, metadata: { accountId }, payment_method: payment_method.id });
+
+
+    // console.log("empty payment_intent", stripeCustomer);
+    // stripeCustomerId = stripeCustomer.id;
     const intentObject = {
       payment_method: payment_method.id,
       amount: Math.round(amount * 100),
       currency: currencyCode.toLowerCase(),
-      customer: stripeCustomerId,
+      // customer: stripeCustomerId,
       confirmation_method: 'manual',
       shipping: getStripeShippingObject(shippingAddress),
       confirm: true
     };
+    console.log("intentObject", intentObject);
     intent = await stripe.paymentIntents.create(intentObject)
+    console.log("intent", intent);
   } else {
+    console.log("payment_intent", payment_intent);
     intent = await stripe.paymentIntents.confirm(payment_intent.id);
     stripeCustomerId = intent.customer;
   }
